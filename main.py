@@ -1,4 +1,3 @@
-from functools import singledispatch
 import numpy as np
 from scipy import signal
 
@@ -9,7 +8,7 @@ from ekf import EKF
 from state_space import getA, getB
 
 # sample time
-DT = 0.01
+DT = 0.04
 
 # quadrotor parameters
 m = 0.027 / 2 # m=27g
@@ -33,97 +32,119 @@ D = np.zeros((nx,nu))
 # initial state and covariance
 x0 = simX[0,:]
 P0 = np.eye(nx)
-P0[0][0] = 1e-1
-P0[1][1] = 1e-1
-P0[2][2] = 1e-1
-P0[3][3] = 1e-1
-P0[4][4] = 1e-1
-P0[5][5] = 1e-1
+P0[0][0] = 1e-2
+P0[1][1] = 1e-2
+P0[2][2] = 1e-2
+P0[3][3] = 1e-2
+P0[4][4] = 1e-2
+P0[5][5] = 1e-2
 
 
-# variance of the multivariate random variable v[n] (q)
-q = 0 * np.eye(nu)
-q[0][0] = 1e1      # variance of T
-q[1][1] = 1e1      # variance of Tau
+# variance of the multivariate random variable v[n] (q) which is responsible for the process noise (Q)
+q =  np.eye(nu)
+q[0][0] = 0.1     # variance of T (N)
+q[1][1] = 0.1     # variance of Tau (N.m)
 
 # variance of the process noise (Q)
 # To be calculated in the for loop at each time step
 
 # variance of the multivariate random variable w[n] (R)
-std_r = 1e-20    # variance of every element in the measurement vector y
-# r = (2 * std_r)**2 / 12 # normal distribution between -std_r and std_r
-R = std_r * np.eye(nx)
+R = np.eye(nx)
+R[0][0] = 1e-2 # variance on the y measurement
+R[1][1] = 1e-2 # variance on the z measurement
+R[2][2] = 1e-2 # variance on the phi measurement
+R[3][3] = 1e-2 # variance on the vy measurement
+R[4][4] = 1e-2 # variance on the vz measurement
+R[5][5] = 1e-2 # variance on the phi_dot measurement
+
 
 ekf = EKF(initial_x=x0,P_0=P0)
 
 NUM_STEPS = simU.shape[0]
 MEAS_EVERY_STEPS = 1
 
-mus     = []
+# defining the lists for the data to be stored at each iteration
+states  = []
+pred    = []
 covs    = []
 meas_xs = []
 
-'''
-create Kalman filter script and class and don't forget to 
-discretize the state space matrices.
-'''
-
 # for loop to estimate the states
-
 for step in range(NUM_STEPS):
 
-    A_tilde, B_tilde, C_tilde, D_tilde, dk = signal.cont2discrete((getA(ekf.mean[2],u1=simU[step,:][0]),getB(ekf.mean[2]),C,D),DT)
+    phi_k = ekf.state[2] # roll at time k
+    u1 = simU[step,:][0] # thrust force control input at time instant k
+
+    # Discretizing A and B using the the sampling time DT (similar to c2d in matlab)
+    A_tilde, B_tilde, C_tilde, D_tilde, dk = signal.cont2discrete((getA(phi_k,u1), getB(phi_k),C,D),DT)
 
     # variance of process noise
     Q = B_tilde @ q @ B_tilde.T 
 
+    # stacking the covariance matrix and the state estimation at each time instant
     covs.append(ekf.cov)
-    mus.append(ekf.mean)
+    states.append(ekf.state)
 
+    # The measurement vector at each time instant
     meas_x = simX[step,:]
 
     # prediction
     ekf.predict(F=A_tilde, G=B_tilde, u = simU[step,:], Q = Q)
+    pred.append(ekf.state)
 
     # correction
-    if step != 0 and step % MEAS_EVERY_STEPS ==0:
-        #ekf.update(H=C_tilde, meas_value=real_x + np.random.randn() * np.sqrt(std_r) * np.ones_like(real_x),
-        #          meas_variance=R)
+    if step != 0 and step % MEAS_EVERY_STEPS == 0:
         ekf.update(H=C_tilde, meas_value=meas_x,
                   meas_variance=R)
     meas_xs.append(meas_x)
 
+# converting lists to np arrays for plotting
 meas_xs = np.array(meas_xs)
-mus = np.array(mus)
+states = np.array(states)
 covs = np.array(covs)
+pred = np.array(pred)
 
+# extracting the y and z positions from the kalman filter estimation
+y_kalman = states[:,0].flatten()
+z_kalman = states[:,1].flatten()
 
+# extracting the variances of y and z for plotting the lower and upper bounds of the confidence interval 
+y_cov = covs[:,0,0] # variance of y at each time instant
+z_cov = covs[:,1,1] # variance of z at each time instant
 
+# lower bound of confidence interval of the position (95%)
+lower_conf_y = y_kalman - 2*np.sqrt(y_cov)
+lower_conf_z = z_kalman - 2*np.sqrt(z_cov)
 
+# lower bound of confidence interval of the position (95%)
+upper_conf_y = y_kalman + 2*np.sqrt(y_cov)
+upper_conf_z = z_kalman + 2*np.sqrt(z_cov)
 
+# printing the confidence levels (mistake was found here ==> nan elements appear when printing)
+print(f' lower_conf_y={lower_conf_y}')
+print(f' lower_conf_z={lower_conf_z}')
 
-plt.figure()
+print(f' upper_conf_y={upper_conf_y}')
+print(f' upper_conf_z={upper_conf_z}')
 
-# plt.subplot(1, 1, 1)
-plt.title('Position')
-plt.plot(meas_xs[:,0],meas_xs[:,1], 'b', label='real')
-plt.plot([mu[0] for mu in mus], [mu[1] for mu in mus], 'r', label='Kalman')
-# plt.plot([mu[0] - 2*np.sqrt(cov[0,0]) for mu, cov in zip(mus, covs)], [mu[1] - 2*np.sqrt(cov[1,1]) for mu, cov in zip(mus, covs)], 'r--') # lower bound of confidence interval of the position (95%)
-# plt.plot([mu[0] + 2*np.sqrt(cov[0,0]) for mu, cov in zip(mus, covs)], [mu[1] + 2*np.sqrt(cov[1,1]) for mu, cov in zip(mus, covs)], 'r--') # upper bound of confidence interval of the position (95%)
-'''
-plt.subplot(2, 1, 1)
-plt.plot(meas_xs[:,0], 'b')
-plt.plot([mu[0] for mu in mus], 'r')
-plt.plot([mu[0] - 2*np.sqrt(cov[0,0]) for mu, cov in zip(mus, covs)], 'r--') # lower bound of confidence interval of the position (95%)
-plt.plot([mu[0] + 2*np.sqrt(cov[0,0]) for mu, cov in zip(mus, covs)], 'r--') # lower bound of confidence interval of the position (95%)
+# plotting the data
+fig1, ax1 = plt.subplots()
 
-plt.subplot(2, 1, 2)
-plt.title('Position y')
-plt.plot(meas_xs[:,1], 'b')
-plt.plot([mu[1] for mu in mus], 'r')
-plt.plot([mu[1] - 2*np.sqrt(cov[1,1]) for mu, cov in zip(mus, covs)], 'r--') # lower bound of confidence interval of the position (95%)
-plt.plot([mu[1] + 2*np.sqrt(cov[1,1]) for mu, cov in zip(mus, covs)], 'r--') # lower bound of confidence interval of the position (95%)
-'''
+ax1.set_title('Position')
+
+# plotting the measurements
+ax1.plot(meas_xs[:,0],meas_xs[:,1], label='real')
+
+# plotting the states after the prediction phase
+ax1.plot(pred[:,0], pred[:,1], '--', label='prediction')
+
+# plotting the extended kalman filter estimation
+ax1.plot(y_kalman, z_kalman, '--', label='kalman')
+
+# plotting confidence levels (commented out because weird results are obtained)  
+# ax1.plot(lower_conf_y, lower_conf_z, label='lower bound confidence')
+# ax1.plot(lower_conf_y, lower_conf_z, label='upper bound confidence')
+
 
 plt.legend()
 plt.show()

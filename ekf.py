@@ -7,9 +7,6 @@ class EKF:
         # mean of state Gaussian RV
         self._x = initial_x.reshape(6,1)
 
-        # Process noise variance
-        # self._Q = Q
-
         # covariance of initial state (Gaussian RV)
         self._P = P_0
 
@@ -17,24 +14,21 @@ class EKF:
                         G: np.array, 
                         u: np.array, 
                         Q: np.array) -> None:
-        # x_{k+1} =  F*x_k   : New x
-        # P_{k+1} =  F*P_k*F^T  + G*(\sigma_a^2)*G^T : New P
 
-        np.random.seed(20)
+        # np.random.seed(20)
 
         u = u.reshape(2,1)
 
         # process noise
-        fn = np.zeros((6,1))
-        '''
-        fn[0] = np.random.normal(0,  0.01)
-        fn[1] = np.random.normal(0,  0.01)
-        fn[2] = np.random.normal(0, 0.001)
-        fn[3] = np.random.normal(0,  0.01)
-        fn[4] = np.random.normal(0,  0.01)
-        fn[5] = np.random.normal(0, 0.001)
-        '''
-
+        fn = np.zeros((6,1)) # no process noise added
+        
+        # fn[0] = np.random.normal(0,  0.1)
+        # fn[1] = np.random.normal(0,  0.1)
+        # fn[2] = np.random.normal(0, 0.001)
+        # fn[3] = np.random.normal(0,  0.01)
+        # fn[4] = np.random.normal(0,  0.01)
+        # fn[5] = np.random.normal(0, 0.001)
+        
         # prediction equations
         new_x = F.dot(self._x) + G.dot(u) + fn
         new_P = F.dot(self._P).dot(F.T) + Q
@@ -42,16 +36,12 @@ class EKF:
         self._P = new_P
         self._x = new_x
 
+
     def update(self,    H: np.array, 
                         meas_value: np.array, 
                         meas_variance: np.array): 
-        # y = z - H*x_k
-        # S_k = H*P_k*H^T + R : innovation covariance (C_{y,y})
-        # K = P_k*H^T*S_k^-1  : Kalman gain
-        # x_{k+1} = x + K*y : New x
-        # P_{k+1} = (I - K*H)*P_k : New P
 
-        np.random.seed(20)
+        # np.random.seed(20)
 
         # noisy measurement
         y = meas_value.reshape(6,1)
@@ -75,15 +65,16 @@ class EKF:
         # innovation
         innov = y - y_hat
         
-        # innovation gain
-        S = H.dot(self._P).dot(H.T) + R
         
-        # Kalman gain
-        K = self._P.dot(H.T).dot(np.linalg.inv(S))
+        C_xy = self._P.dot(H.T)
+        C_yy = H.dot(self._P).dot(H.T) + R
+        
+        # kalman gain
+        K = C_xy.dot(np.linalg.inv(C_yy))
 
         # state and covariance update
         new_x = self._x + K.dot(innov)
-        new_P = (np.eye(6) - K.dot(H)).dot(self._P)
+        new_P = self._P - K.dot(C_xy.T)
 
         self._P = new_P
         self._x = new_x
@@ -94,5 +85,5 @@ class EKF:
 
 
     @property
-    def mean(self) -> np.array:
+    def state(self) -> np.array:
         return self._x
