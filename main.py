@@ -42,8 +42,8 @@ P0[5][5] = 1e-2
 
 # variance of the multivariate random variable v[n] (q) which is responsible for the process noise (Q)
 q =  np.eye(nu)
-q[0][0] = 0.1     # variance of T (N)
-q[1][1] = 0.1     # variance of Tau (N.m)
+q[0][0] = 0.1     # variance of the thrust u1 (unit: N)
+q[1][1] = 0.1     # variance of the torque u2 (unit: N.m)
 
 # variance of the process noise (Q)
 # To be calculated in the for loop at each time step
