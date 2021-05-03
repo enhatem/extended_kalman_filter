@@ -8,18 +8,18 @@ from ekf import EKF
 from state_space import getA, getB
 
 # sample time
-DT = 0.04 # same as the measurement vector
+DT = 1 / 100 # same as the measurement vector
 
 # quadrotor parameters
 m = 0.027 / 2 # m=27g
 Ixx = 1.657171e-05
 
 # import csv file of simX and simU (noisy measurement)
-simX = pd.read_csv('data/simX.csv')
-simU = pd.read_csv('data/simU.csv')
+simX = pd.read_csv('data/100Hz/measX.csv')
+simU = pd.read_csv('data/100Hz/simU.csv')
 
 simX = simX[['y', 'z', 'phi', 'vy', 'vz', 'phi_dot']].to_numpy()
-simU = simU[['T', 'Tau']].to_numpy()
+simU = simU[['Thrust', 'Torque']].to_numpy()
 
 # dimensions 
 nx = simX.shape[1]
@@ -112,9 +112,9 @@ for step in range(NUM_STEPS):
     pred.append(ekf.state)
 
     # correction
-    if step != 0 and step % MEAS_EVERY_STEPS == 0:
-        ekf.update(C=C, meas=meas_x,
-                  meas_variance=Q_gamma)
+    # if step != 0 and step % MEAS_EVERY_STEPS == 0:
+    #     ekf.update(C=C, meas=meas_x,
+    #               meas_variance=Q_gamma)
     meas_xs.append(meas_x)
 
 # converting lists to np arrays for plotting
