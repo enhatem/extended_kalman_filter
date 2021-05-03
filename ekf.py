@@ -7,7 +7,6 @@ def is_pos_def(x):
 
 class EKF:
     def __init__(self,  initial_x: np.array, 
-                        # Q: np.array,
                         P_0: np.array,
                         m: float, 
                         Ixx: float,
@@ -55,18 +54,8 @@ class EKF:
         # measurement variance
         Q_gamma = meas_variance.reshape(6,6)
 
-        # noise of the measurement prediction (no noise added)
-        hn = np.zeros((6,1))
-        '''
-        hn[0] = np.random.normal(0,0.01)
-        hn[1] = np.random.normal(0,0.01)
-        hn[2] = np.random.normal(0,0.01)
-        hn[3] = np.random.normal(0,0.01)
-        hn[4] = np.random.normal(0,0.01)
-        hn[5] = np.random.normal(0,0.01)
-        '''
         # measurement prediction
-        y_hat = C @ self._x + hn
+        y_hat = C @ self._x
 
         # innovation
         innov = y - y_hat
@@ -78,7 +67,7 @@ class EKF:
         new_P = ( np.eye(len(new_x)) - K @ C) @ self._P @ ( np.eye(len(new_x)) - K @ C).T + K @ Q_gamma @ K.T # (Joseph form, better conditioned)
         
         
-        # AUVE equations
+        # equations from AUVE book
         # C_xy = self._P @ C.T
         # C_yy = C @ self._P @ C.T + Q_gamma
         # K = C_xy @ np.linalg.inv(C_yy)
