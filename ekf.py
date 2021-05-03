@@ -1,5 +1,9 @@
+import sys
 import numpy as np
 from state_space import evolution
+
+def is_pos_def(x):
+    return np.all(np.linalg.eigvals(x) > 0)
 
 class EKF:
     def __init__(self,  initial_x: np.array, 
@@ -28,27 +32,14 @@ class EKF:
                         u: np.array, 
                         Q_alpha: np.array,
                         Q_beta: np.array) -> None:
-
-        # np.random.seed(20)
-
-        u = u.reshape(2,1)
-
-        # process noise
-        # fn = np.zeros((6,1)) # no process noise added
-        
-        # fn[0] = np.random.normal(0,  0.1)
-        # fn[1] = np.random.normal(0,  0.1)
-        # fn[2] = np.random.normal(0, 0.001)
-        # fn[3] = np.random.normal(0,  0.01)
-        # fn[4] = np.random.normal(0,  0.01)
-        # fn[5] = np.random.normal(0, 0.001)
         
         # prediction equations
-        # new_x = F.dot(self._x) + G.dot(u) + fn
         new_x = evolution(self._x, u, self._m, self._Ixx, self._dt)
-        # new_P = F.dot(self._P).dot(F.T) + Q
         new_P = A @ self._P @ A.T + B @ Q_beta @ B.T + Q_alpha
-        # new_P = A.dot(self._P).dot(A.T) + B.dot(Q_beta).dot(B.T) + Q_alpha
+        
+        pos_def_bool = is_pos_def(new_P)
+        if pos_def_bool == False:
+            sys.exit("The covariance matrix is not positive definite")
 
         self._P = new_P
         self._x = new_x
@@ -58,9 +49,7 @@ class EKF:
                         meas: np.array, 
                         meas_variance: np.array): 
 
-        # np.random.seed(20)
-
-        # noisy measurement
+        # reshaping the measurement vector for matrix multiplication
         y = meas.reshape(6,1)
 
         # measurement variance
@@ -82,18 +71,22 @@ class EKF:
         # innovation
         innov = y - y_hat
         
+        # Mobile robot equations
         K = self._P @ C.T @ np.linalg.inv( C @ self._P @C.T + Q_gamma)
         new_x = self._x + K @ innov
-        new_P = ( np.eye(len(new_x)) - K @ C) @ self._P
+        # new_P = ( np.eye(len(new_x)) - K @ C) @ self._P
+        new_P = ( np.eye(len(new_x)) - K @ C) @ self._P @ ( np.eye(len(new_x)) - K @ C).T + K @ Q_gamma @ K.T # (Joseph form, better conditioned)
+        
+        
+        # AUVE equations
         # C_xy = self._P @ C.T
         # C_yy = C @ self._P @ C.T + Q_gamma
-        
-        # kalman gain
-        #K = C_xy @ np.linalg.inv(C_yy)
+        # K = C_xy @ np.linalg.inv(C_yy)
 
         # state and covariance update
         # new_x = self._x + K @ innov
         # new_P = self._P - K @ C_xy.T
+        # new_P = ( np.eye(len(new_x)) - K @ C) @ self._P @ ( np.eye(len(new_x)) - K @ C).T + K @ Q_gamma @ K.T (Joseph form, better conditioned)
 
         self._P = new_P
         self._x = new_x
