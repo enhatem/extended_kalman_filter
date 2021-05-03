@@ -8,7 +8,7 @@ from ekf import EKF
 from state_space import getA, getB
 
 # sample time
-DT = 0.04
+DT = 0.04 # same as the measurement vector
 
 # quadrotor parameters
 m = 0.027 / 2 # m=27g
@@ -39,26 +39,28 @@ P0[3][3] = 1e-2
 P0[4][4] = 1e-2
 P0[5][5] = 1e-2
 
+# variance of state noise
+Q_alpha = np.zeros((6,6))
 
-# variance of the multivariate random variable v[n] (q) which is responsible for the process noise (Q)
-q =  np.eye(nu)
-q[0][0] = 0.1     # variance of the thrust u1 (unit: N)
-q[1][1] = 0.1     # variance of the torque u2 (unit: N.m)
+# variance of the input noise 
+Q_beta =  np.eye(nu)
+Q_beta[0][0] = 0.01     # variance of the thrust u1 (unit: N)
+Q_beta[1][1] = 0.01     # variance of the torque u2 (unit: N.m)
 
 # variance of the process noise (Q)
 # To be calculated in the for loop at each time step
 
-# variance of the multivariate random variable w[n] (R)
-R = np.eye(nx)
-R[0][0] = 1e-2 # variance on the y measurement
-R[1][1] = 1e-2 # variance on the z measurement
-R[2][2] = 1e-2 # variance on the phi measurement
-R[3][3] = 1e-2 # variance on the vy measurement
-R[4][4] = 1e-2 # variance on the vz measurement
-R[5][5] = 1e-2 # variance on the phi_dot measurement
+# variance of the measurement noise
+Q_gamma = np.eye(nx)
+Q_gamma[0][0] = 1e-9 # variance on the y measurement
+Q_gamma[1][1] = 1e-9 # variance on the z measurement
+Q_gamma[2][2] = 1e-9 # variance on the phi measurement
+Q_gamma[3][3] = 1e-9 # variance on the vy measurement
+Q_gamma[4][4] = 1e-9 # variance on the vz measurement
+Q_gamma[5][5] = 1e-9 # variance on the phi_dot measurement
 
 
-ekf = EKF(initial_x=x0,P_0=P0)
+ekf = EKF(initial_x=x0,P_0=P0, m=m, Ixx=Ixx, dt = DT)
 
 NUM_STEPS = simU.shape[0]
 MEAS_EVERY_STEPS = 1
@@ -72,14 +74,10 @@ meas_xs = []
 # for loop to estimate the states
 for step in range(NUM_STEPS):
 
-    phi_k = ekf.state[2] # roll at time k
-    u1 = simU[step,:][0] # thrust force control input at time instant k
-
-    # Discretizing A and B using the the sampling time DT (similar to c2d in matlab)
-    A_tilde, B_tilde, C_tilde, D_tilde, dk = signal.cont2discrete((getA(phi_k,u1), getB(phi_k),C,D),DT)
-
-    # variance of process noise
-    Q = B_tilde @ q @ B_tilde.T 
+    phi_k   = float (ekf.state[2])  # roll at time k
+    u_k     = simU[step,:]  # control input vector at time instant k
+    u1_k    = u_k[0]        # thrust control input at time instant k
+    u2_k    = u_k[1]        # torque control input at time instant k
 
     # stacking the covariance matrix and the state estimation at each time instant
     covs.append(ekf.cov)
@@ -88,14 +86,35 @@ for step in range(NUM_STEPS):
     # The measurement vector at each time instant
     meas_x = simX[step,:]
 
+    # Discretizing A and B using the the sampling time DT (similar to c2d in matlab)
+    # A_tilde, B_tilde, C_tilde, D_tilde, dk = signal.cont2discrete((getA(phi_k,u1), getB(phi_k),C,D),DT)
+
+    A_k = np.array([
+        [1, 0,                                0,  ekf._dt,       0,       0],
+        [0, 1,                                0,        0, ekf._dt,       0],
+        [0, 0,                                1,        0,       0, ekf._dt],
+        [0, 0,  -u1_k/m * np.cos(phi_k)*ekf._dt,        1,       0,       0],
+        [0, 0,  -u1_k/m * np.sin(phi_k)*ekf._dt,        0,       1,       0],
+        [0, 0,                                0,        0,       0,       1]
+    ])
+
+    B_k = np.array([
+        [0,                                 0],
+        [0,                                 0],
+        [0,                                 0],
+        [-np.sin(phi_k) / ekf._m * ekf._dt, 0],
+        [ np.cos(phi_k) / ekf._m * ekf._dt, 0],
+        [0,                ekf._dt / ekf._Ixx]
+    ])
+
     # prediction
-    ekf.predict(F=A_tilde, G=B_tilde, u = simU[step,:], Q = Q)
+    ekf.predict(A = A_k, B = B_k, u = u_k, Q_alpha = Q_alpha, Q_beta = Q_beta)
     pred.append(ekf.state)
 
     # correction
     if step != 0 and step % MEAS_EVERY_STEPS == 0:
-        ekf.update(H=C_tilde, meas_value=meas_x,
-                  meas_variance=R)
+        ekf.update(C=C, meas=meas_x,
+                  meas_variance=Q_gamma)
     meas_xs.append(meas_x)
 
 # converting lists to np arrays for plotting
@@ -109,23 +128,23 @@ y_kalman = states[:,0].flatten()
 z_kalman = states[:,1].flatten()
 
 # extracting the variances of y and z for plotting the lower and upper bounds of the confidence interval 
-y_cov = covs[:,0,0] # variance of y at each time instant
-z_cov = covs[:,1,1] # variance of z at each time instant
+# y_cov = covs[:,0,0] # variance of y at each time instant
+# z_cov = covs[:,1,1] # variance of z at each time instant
 
 # lower bound of confidence interval of the position (95%)
-lower_conf_y = y_kalman - 2*np.sqrt(y_cov)
-lower_conf_z = z_kalman - 2*np.sqrt(z_cov)
+# lower_conf_y = y_kalman - 2*np.sqrt(y_cov)
+# lower_conf_z = z_kalman - 2*np.sqrt(z_cov)
 
 # lower bound of confidence interval of the position (95%)
-upper_conf_y = y_kalman + 2*np.sqrt(y_cov)
-upper_conf_z = z_kalman + 2*np.sqrt(z_cov)
+# upper_conf_y = y_kalman + 2*np.sqrt(y_cov)
+# upper_conf_z = z_kalman + 2*np.sqrt(z_cov)
 
 # printing the confidence levels (mistake was found here ==> nan elements appear when printing)
-print(f' lower_conf_y={lower_conf_y}')
-print(f' lower_conf_z={lower_conf_z}')
+# print(f' lower_conf_y={lower_conf_y}')
+# print(f' lower_conf_z={lower_conf_z}')
 
-print(f' upper_conf_y={upper_conf_y}')
-print(f' upper_conf_z={upper_conf_z}')
+# print(f' upper_conf_y={upper_conf_y}')
+# print(f' upper_conf_z={upper_conf_z}')
 
 # plotting the data
 fig1, ax1 = plt.subplots()
