@@ -48,20 +48,21 @@ Q_alpha[4][4] = 1e-1 # variance of the state noise on vz
 Q_alpha[5][5] = 1e-1 # variance of the state noise on phi_dot
 
 # variance of the input noise
-var_u1 = 1e-1
-var_u2 = 1e-1
+
+var_u1= 1e-3
+var_u2= 1e-4
 Q_beta =  np.eye(nu)
 Q_beta[0][0] = var_u1 # variance of the noise on the thrust input u1 (unit: N)
 Q_beta[1][1] = var_u2 # variance of the noise on the torque input u2 (unit: N.m)
 
 # variance of the measurement noise
 Q_gamma = np.eye(nx)
-Q_gamma[0][0] = 0.010  # variance on the y measurement (between -1cm and +1 cm)
-Q_gamma[1][1] = 0.010  # variance on the z measurement (between -1cm and +1 cm)
-Q_gamma[2][2] = 0.087  # variance on the phi measurement (between -5 degrees and +5 degrees)
-Q_gamma[3][3] = 0.10   # variance on the vy measurement (between -0.1m/s and +0.1m/s)
-Q_gamma[4][4] = 0.10   # variance on the vz measurement (between -0.1m/s and +0.1m/s)
-Q_gamma[5][5] = 0.087  # variance on the phi_dot measurement (between -5 degrees/s^2 and +5 degrees/s^2)
+Q_gamma[0][0] = 0.010**2  # variance on the y measurement (between -1cm and +1 cm)
+Q_gamma[1][1] = 0.010**2  # variance on the z measurement (between -1cm and +1 cm)
+Q_gamma[2][2] = 0.050**2  # variance on the phi measurement (between -5 degrees and +5 degrees)
+Q_gamma[3][3] = 0.100**2  # variance on the vy measurement (between -0.1m/s and +0.1m/s)
+Q_gamma[4][4] = 0.100**2  # variance on the vz measurement (between -0.1m/s and +0.1m/s)
+Q_gamma[5][5] = 0.087**2  # variance on the phi_dot measurement (between -5 degrees/s^2 and +5 degrees/s^2)
 
 
 ekf = EKF(initial_x=x0, P_0=P0, m=m, Ixx=Ixx, dt = DT)
@@ -121,7 +122,7 @@ for step in range(NUM_STEPS):
     # correction phase
     if step != 0 and step % MEAS_EVERY_STEPS == 0:
         ekf.update(C=C, meas=meas_x,
-                  meas_variance=Q_gamma)
+                    meas_variance=Q_gamma)
     meas_xs.append(meas_x)
 
 # converting lists to np arrays for plotting
@@ -153,7 +154,6 @@ lower_conf_phi      = phi_kalman - 2*np.sqrt(phi_cov)
 lower_conf_vy       = vy_kalman - 2*np.sqrt(vy_cov)
 lower_conf_vz       = vz_kalman - 2*np.sqrt(vz_cov)
 lower_conf_phi_dot  = phi_dot_kalman - 2*np.sqrt(phi_dot_cov)
-
 
 # lower bound of confidence interval of the position (95%)
 upper_conf_y        = y_kalman + 2*np.sqrt(y_cov)
@@ -233,6 +233,19 @@ ax5.set_title('States: velocities')
 ax5.legend()
 ax6.legend()
 ax7.legend()
+
+
+fig3, (ax8, ax9) = plt.subplots(nrows=2, ncols=1 , sharex=True)
+
+ax8.plot(simU[:,0], label='Thrust')
+ax9.plot(simU[:,1], label='Torque')
+
+ax8.set_title('Control inputs')
+ax8.set_ylabel('T[N]')
+
+ax9.set_xlabel('N')
+ax9.set_ylabel('Tau[N.m]')
+
 
 
 plt.show()
